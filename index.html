@@ -660,6 +660,8 @@ let S = {
 };
 
 let ticker = null;
+let tickerStartedAt = null;   // Date.now() quando avviato
+let tickerBaseRemaining = 0;  // secondi rimasti al momento dell'avvio
 const CIRC = Math.PI * 2 * 84; // ≈ 527.8
 
 /* ═══════════════════════════════════════════
@@ -753,7 +755,9 @@ function toggleTimer() {
   S.running = !S.running;
 
   if (S.running) {
-    ticker = setInterval(tick, 1000);
+    tickerStartedAt = Date.now();
+    tickerBaseRemaining = S.remaining;
+    ticker = setInterval(tick, 500); // ogni 500ms per recuperare subito dopo sblocco
     document.getElementById('timer-digits').classList.add('live');
     document.getElementById('btn-start').textContent = 'Pausa';
   } else {
@@ -764,14 +768,21 @@ function toggleTimer() {
 }
 
 function tick() {
-  // LIVE SYNC: credit time while studying
+  // Calcola il tempo reale trascorso dal timestamp (funziona anche con schermo bloccato)
+  const elapsed = Math.floor((Date.now() - tickerStartedAt) / 1000);
+  const newRemaining = Math.max(0, tickerBaseRemaining - elapsed);
+
+  // Credita i secondi di studio trascorsi dall'ultimo tick
   if (S.phase === 'focus') {
-    if (S.subject === 'nutri') S.nutriSecs++;
-    else                        S.ecgSecs++;
-    updateProgressUI();
+    const delta = S.remaining - newRemaining;
+    if (delta > 0) {
+      if (S.subject === 'nutri') S.nutriSecs += delta;
+      else                        S.ecgSecs   += delta;
+      updateProgressUI();
+    }
   }
 
-  S.remaining--;
+  S.remaining = newRemaining;
   updateTimerDisplay();
   updateRing();
 
@@ -827,6 +838,7 @@ function phaseEnd() {
 function resetTimer() {
   if (S.running) { clearInterval(ticker); S.running = false; }
   document.getElementById('timer-digits').classList.remove('live');
+  tickerStartedAt = null; tickerBaseRemaining = 0;
   S.phase = 'focus';
   const p = PRESETS[S.preset];
   S.remaining = p.study;
@@ -1187,6 +1199,14 @@ function init() {
   renderTasks();
   renderStats();
   renderSessionLog();
+
+  // Recupera il tempo perso quando l'app torna in primo piano (schermo sbloccato)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && S.running && tickerStartedAt) {
+      // Il browser era sospeso: ricalcola subito senza aspettare il prossimo tick
+      tick();
+    }
+  });
 
   // task input enter
   document.getElementById('task-input').addEventListener('keydown', e => {
