@@ -215,9 +215,69 @@ body{
 /* ── PRESETS ── */
 .preset-row{
   display:grid;
-  grid-template-columns:repeat(3,1fr);
+  grid-template-columns:repeat(4,1fr);
   gap:7px;
   margin-bottom:14px;
+}
+
+/* custom timer modal */
+.modal-backdrop{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,.7);
+  backdrop-filter:blur(6px);
+  z-index:200;
+  display:flex;align-items:flex-end;justify-content:center;
+  opacity:0;pointer-events:none;
+  transition:opacity .25s;
+}
+.modal-backdrop.open{opacity:1;pointer-events:all}
+.modal-sheet{
+  background:var(--s1);
+  border:1px solid var(--border);
+  border-radius:22px 22px 0 0;
+  padding:20px 20px 36px;
+  width:min(100%,440px);
+  transform:translateY(100%);
+  transition:transform .3s ease;
+}
+.modal-backdrop.open .modal-sheet{transform:translateY(0)}
+.modal-title{
+  font-family:'DM Serif Display',serif;
+  font-size:20px;
+  margin-bottom:18px;
+  text-align:center;
+}
+.modal-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
+.modal-field label{
+  display:block;font-size:11px;
+  text-transform:uppercase;letter-spacing:.08em;
+  color:var(--muted2);margin-bottom:6px;
+}
+.modal-field input{
+  width:100%;
+  background:var(--s2);
+  border:1px solid var(--border);
+  border-radius:10px;
+  color:var(--text);
+  font-family:'DM Mono',monospace;
+  font-size:22px;
+  text-align:center;
+  padding:12px;
+  outline:none;
+}
+.modal-field input:focus{border-color:var(--nutri)}
+.modal-btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn-modal-cancel{
+  background:var(--s2);border:1px solid var(--border);
+  border-radius:11px;color:var(--muted2);
+  font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;
+  padding:13px;cursor:pointer;
+}
+.btn-modal-ok{
+  background:var(--nutri);color:#060d15;
+  border:none;border-radius:11px;
+  font-family:'DM Sans',sans-serif;font-size:14px;font-weight:700;
+  padding:13px;cursor:pointer;
 }
 .preset-btn{
   background:var(--s2);
@@ -517,6 +577,10 @@ nav button.active{color:var(--text);background:var(--s2)}
           <div class="pb-name">60/10</div>
           <div>Deep</div>
         </div>
+        <div class="preset-btn" id="btn-custom-preset" onclick="openModal()">
+          <div class="pb-name">⏱</div>
+          <div>Custom</div>
+        </div>
       </div>
 
       <!-- ring -->
@@ -597,6 +661,27 @@ nav button.active{color:var(--text);background:var(--s2)}
       <button class="btn-danger" onclick="resetDay()">Azzera giornata</button>
     </div>
   </div>
+
+<!-- CUSTOM TIMER MODAL -->
+<div class="modal-backdrop" id="custom-modal" onclick="closeModal(event)">
+  <div class="modal-sheet">
+    <div class="modal-title">Timer personalizzato</div>
+    <div class="modal-fields">
+      <div class="modal-field">
+        <label>Minuti</label>
+        <input type="number" id="custom-mins" value="30" min="1" max="240" placeholder="30">
+      </div>
+      <div class="modal-field">
+        <label>Pausa (min)</label>
+        <input type="number" id="custom-break" value="5" min="1" max="60" placeholder="5">
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-modal-cancel" onclick="closeModalBtn()">Annulla</button>
+      <button class="btn-modal-ok" onclick="applyCustom()">Avvia</button>
+    </div>
+  </div>
+</div>
 
 </div><!-- /app -->
 
@@ -1173,6 +1258,64 @@ function resetDay() {
   updateProgressUI(); updatePhaseLabel(); renderStats(); renderSessionLog(); buildPomodoDots();
   resetTimer(); save();
   toast('Dati azzerati ✓');
+}
+
+/* ═══════════════════════════════════════════
+   CUSTOM TIMER MODAL
+═══════════════════════════════════════════ */
+function openModal() {
+  if (S.running) { toast('Ferma il timer prima ✋'); return; }
+  document.getElementById('custom-modal').classList.add('open');
+  setTimeout(() => document.getElementById('custom-mins').focus(), 350);
+}
+
+function closeModalBtn() {
+  document.getElementById('custom-modal').classList.remove('open');
+}
+
+function closeModal(e) {
+  // close only if clicking backdrop, not sheet
+  if (e.target === document.getElementById('custom-modal')) closeModalBtn();
+}
+
+function applyCustom() {
+  const mins  = Math.max(1, Math.min(240, parseInt(document.getElementById('custom-mins').value) || 30));
+  const brk   = Math.max(1, Math.min(60,  parseInt(document.getElementById('custom-break').value) || 5));
+
+  // Inject a temporary custom preset
+  PRESETS['custom'] = {
+    study:  mins * 60,
+    breakS: brk  * 60,
+    breakL: Math.max(brk * 2, 10) * 60,
+    subject: S.subject || 'nutri',
+    label:  `Custom ${mins}/${brk}`
+  };
+
+  closeModalBtn();
+
+  // Deselect all preset buttons, highlight custom
+  document.querySelectorAll('.preset-btn').forEach(b => b.className = 'preset-btn');
+  const sub = S.subject || 'nutri';
+  document.getElementById('btn-custom-preset').classList.add(sub === 'ecg' ? 'active-ecg' : 'active-nutri');
+  document.getElementById('btn-custom-preset').innerHTML =
+    '<div class="pb-name">' + mins + 'm</div><div>Custom</div>';
+
+  S.preset = 'custom';
+  S.phase  = 'focus';
+  S.remaining  = mins * 60;
+  S.totalSecs  = mins * 60;
+
+  // auto-select subject if none
+  if (!S.subject) {
+    S.subject = 'nutri';
+    document.getElementById('sc-nutri').className = 'subject-card sel-nutri';
+  }
+
+  updateBtnColor();
+  updatePhaseLabel();
+  updateTimerDisplay();
+  updateRing();
+  toast(`⏱ Timer ${mins} min impostato!`);
 }
 
 /* ═══════════════════════════════════════════
