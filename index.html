@@ -1230,6 +1230,11 @@ function toast(msg) {
 }
 
 function playSound() {
+  // Vibrazione pattern sveglia: 3 impulsi forti
+  if (navigator.vibrate) {
+    navigator.vibrate([400, 150, 400, 150, 400]);
+  }
+  // Suono di backup (per chi ha vibrazione disattivata)
   try {
     const ctx = new(window.AudioContext||window.webkitAudioContext)();
     const osc = ctx.createOscillator();
